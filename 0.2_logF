@@ -1,43 +1,43 @@
-library(GEOquery)
+library(GEOquery) # pulling packages needed for DGEA, GEOquery to get file, limma to identify DEGs
 library(limma)
 
-gse <- getGEO("GSE93272", GSEMatrix = TRUE, AnnotGPL = TRUE)
-gse_data <- gse[[1]]
-exprs_data <- exprs(gse_data)
-#View(exprs_data)
-pheno_data <- pData(gse_data)
-feature_data <- fData(gse_data)
-#View(pheno_data)
+gse <- getGEO("GSE93272", GSEMatrix = TRUE, AnnotGPL = TRUE) # getting GEO file GSE93272
+gse_data <- gse[[1]] # taking the first file from the list
+exprs_data <- exprs(gse_data) # making exprs_data the expression data from the gse file, which is info about genes and their functions
+#View(exprs_data) # code to view table of expression data 
+pheno_data <- pData(gse_data) # making pheno_data the phenotypical data from the gse file, which is charasteristics about samples
+feature_data <- fData(gse_data) # making feature_data the feature data froom the gse file, which is features being measured like gene symbols and probe id
+#View(pheno_data) # viewing phenotypical data as a table
 
 write.csv(exprs_data, "~/Project/week1/GSE93272_expression_matrix.csv") # raw data
 write.csv(pheno_data, "~/Project/week1/GSE93272_sample_metadata.csv")
 write.csv(feature_data, "~/Project/week1/GSE93272_probe_annotation.csv")
-
+# saving all this data as csv files on my computer
 
 # Remove probes with too many NAs or zero variance
-exprs_data <- exprs_data[complete.cases(exprs_data), ]
-exprs_data <- exprs_data[apply(exprs_data, 1, var) > 0.01, ]  # change threshold as needed
+exprs_data <- exprs_data[complete.cases(exprs_data), ] # keep only the rows that have no missing values at all
+exprs_data <- exprs_data[apply(exprs_data, 1, var) > 0.01, ]  # change threshold as needed, keeps genes that have variance > 0.01 
 # Filter out low expression probes (e.g., below 25th percentile)
 
 exprs_data <- log2(exprs_data + 1)
 
-threshold <- quantile(rowMeans(exprs_data), 0.25)
-exprs_data <- exprs_data[rowMeans(exprs_data) > threshold, ]
+threshold <- quantile(rowMeans(exprs_data), 0.25) # genes that fall below the 25th percentile are low expression 
+exprs_data <- exprs_data[rowMeans(exprs_data) > threshold, ] # greater than threshold are now the only thing considered exprs_data
 
 
 
 # Ensure annotation includes gene symbols
-feature_data <- fData(gse_data)
+#feature_data <- fData(gse_data)
 head(feature_data$`Gene symbol`)  # Confirm it has gene symbols
 
 # Combine expression data and annotation
 exprs_annotated <- data.frame(probe_id = rownames(exprs_data),
                               exprs_data,
-                              stringsAsFactors = FALSE)
+                              stringsAsFactors = FALSE) # combine exprs (probe id) and annotation (gene symbols)
 
 # Add gene symbols
 exprs_annotated$gene_symbol <- feature_data[rownames(exprs_data), "Gene symbol"]
-exprs_annotated$gene_symbol <- sapply(strsplit(exprs_annotated$gene_symbol, "///", fixed = TRUE), `[`, 1)
+exprs_annotated$gene_symbol <- sapply(strsplit(exprs_annotated$gene_symbol, "///", fixed = TRUE), `[`, 1) # when the entry refers to multiple genes, this is called a string. strsplit separates the string of genes by "///", sapply takes only the first gene from a string of characters; for example, "BRCA1" out of "BRCA1///TP53"
 
 write.csv(exprs_annotated, "~/Project/week1/GSE272_Exprs_annotated.csv")
 
@@ -51,26 +51,26 @@ exprs_female_matrix <- exprs_female[, !(colnames(exprs_female) %in% c("probe_id"
 
 
 
-group_female <- factor(pheno_female$`disease state:ch1`)
-design_female <- model.matrix(~ 0 + group_female)
-colnames(design_female) <- make.names(colnames(design_female))
-contrast.matrix <- makeContrasts(RA_vs_Control = group_femaleRA - group_femalehealthy.control, levels = design_female)
+group_female <- factor(pheno_female$`disease state:ch1`) # making the female group the females with disease
+design_female <- model.matrix(~ 0 + group_female) # design matrix, structure created to compare all attributes in diseased females without an intercept, this is what "0 +" does
+colnames(design_female) <- make.names(colnames(design_female)) # making column names valid and readable in r
+contrast.matrix <- makeContrasts(RA_vs_Control = group_femaleRA - group_femalehealthy.control, levels = design_female) # contrast matrix, defining how we want to compare the healthy and RA group
 
 
 
 
-fit <- lmFit(exprs_female_matrix, design_female)
-fit2 <- contrasts.fit(fit, contrast.matrix)
-fit2 <- eBayes(fit2)
+fit <- lmFit(exprs_female_matrix, design_female) # fits a linear model to your exprs data using design matrix 
+fit2 <- contrasts.fit(fit, contrast.matrix) # applies your contrast, RA vs healthy, to the fitted model 
+fit2 <- eBayes(fit2) # applies Empirical bay smoothing to your data to improve statistical reliability when you have lots of genes 
 
-results <- topTable(fit2, adjust = "fdr", number = Inf)
+results <- topTable(fit2, adjust = "fdr", number = Inf) # gives results: top genes from your fitted model, corrects for false positives using adjusted p-value, and returns all genes - that is what Inf means
 
-results$probe_id <- rownames(results)
-results_annotated <- merge(results, exprs_annotated[, c("probe_id", "gene_symbol")], by = "probe_id", all.x = TRUE)
+results$probe_id <- rownames(results) # adds probe id as a column to your results so they can be used for merging 
+results_annotated <- merge(results, exprs_annotated[, c("probe_id", "gene_symbol")], by = "probe_id", all.x = TRUE) # merging results with probe id and gene symbols from exprs_annotated, by matching entries in the probe id column, and keeps all rows even if there are not any matching annotation
 
 
-#significant_DEGs <- results_annotated[results_annotated$adj.P.Val < 0.05 & abs(results_annotated$logFC) > 0.2, ]
-write.csv(results_annotated, "~/Project/week1/OVERALL_FEMALE_0.2.csv", row.names = FALSE)
+#significant_DEGs <- results_annotated[results_annotated$adj.P.Val < 0.05 & abs(results_annotated$logFC) > 0.2, ] # sig are the annotated results that have a p-value less than 0.5 and a log2 FC > 0.2
+write.csv(results_annotated, "~/Project/week1/OVERALL_FEMALE_0.2.csv", row.names = FALSE) # saving these annotated results 
 
 
 
@@ -89,13 +89,13 @@ results_annotated$Regulation <- ifelse(
     "Not Significant"
   )
 )
-
+# classifying as either up or downregulated based on if above 0.2, or below -0.2, constant p-value of <0.05
 # View result
 table(results_annotated$Regulation)
 # 40848 not significant , 31 are up regulated
 
 
-signi <- results_annotated[results_annotated$Regulation %in%c("Upregulated","Downregulated"),]
+signi <- results_annotated[results_annotated$Regulation %in%c("Upregulated","Downregulated"),] # signi is the significant genes that come from the annotated results containing upregulated and downregulated labels
 
 # Save classified results
 write.csv(results_annotated, "~/Project/week1/Female/0.2_log2F.R/OVERALL_FEMALE_0.2_with_regulation_entire.csv", row.names = FALSE)
@@ -130,7 +130,7 @@ volcano_plot <- EnhancedVolcano(
   title = 'Volcano Plot: RA vs Control (Females)',
   subtitle = 'Upregulated (red), Downregulated (blue), Not Significant (grey)'
 )
-
+# making a volcano plot!!! the labels are the gene symbols. this code gives names to the x and y axis, makes the p-value cutoff, log2 FC cutoff, creates the color of points, changes size of points on graph and thier labels, gives a title and subtitle
 
 
 # Save the plot
@@ -149,15 +149,15 @@ ggsave(
 
 library(pheatmap)
 
-top_DEGs <- signi[order(signi$adj.P.Val), ]
-top_DEGs <- top_DEGs[!duplicated(top_DEGs$gene_symbol), ]
-top_DEGs <- top_DEGs[!is.na(top_DEGs$gene_symbol) & top_DEGs$gene_symbol != "", ]
-top50_genes <- head(top_DEGs, 50)
-heatmap_data <- exprs_female_matrix[top50_genes$probe_id, ]
-rownames(heatmap_data) <- top50_genes$gene_symbol
-heatmap_scaled <- t(scale(t(heatmap_data)))
-annotation_col <- data.frame(Disease = group_female)
-rownames(annotation_col) <- colnames(heatmap_scaled)
+top_DEGs <- signi[order(signi$adj.P.Val), ] # making the top differentially expressed genes to be signi with adjusted p-value
+top_DEGs <- top_DEGs[!duplicated(top_DEGs$gene_symbol), ] # adding gene symbols to the DEGs
+top_DEGs <- top_DEGs[!is.na(top_DEGs$gene_symbol) & top_DEGs$gene_symbol != "", ] # removes the genes that are na: with no gene symbol
+top50_genes <- head(top_DEGs, 50) # getting the top 50 genes 
+heatmap_data <- exprs_female_matrix[top50_genes$probe_id, ] # creating data to use in the heatmap 
+rownames(heatmap_data) <- top50_genes$gene_symbol # making the rownames gene symbols 
+heatmap_scaled <- t(scale(t(heatmap_data))) # flipping matrix so columns become rows and vice versa, scaling it, and flipping it back: makes each variation comparable
+annotation_col <- data.frame(Disease = group_female) # making a data frame to assign whether samples are diseased or healthy
+rownames(annotation_col) <- colnames(heatmap_scaled) # syncing labels in your annotation data frame to match samples in heatmap data 
 
 #pheatmap
 pheatmap(
@@ -166,8 +166,10 @@ pheatmap(
   fontsize_row = 7,
   fontsize_col = 7,
   main = "Top 50 DEGs: RA vs Control (Females)",
-  color = colorRampPalette(c("navy", "white", "firebrick3"))(100),
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
+  color = colorRampPalette(c("navy", "white", "firebrick3"))(100), # 100 colors from this color gradient will generate in total. 
+  cluster_rows = TRUE, # group similar rows together 
+  cluster_cols = TRUE, # group similar columns together 
   border_color = NA
 )
+
+# creating heatmap!! making the annotation data frame the data used in heatmap, adjusting font size in rows and columns, making a title which is what "main" does, adjusting color, no border color
