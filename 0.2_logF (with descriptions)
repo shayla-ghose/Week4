@@ -47,7 +47,7 @@ exprs_female <- exprs_annotated[, female_samples]
 pheno_female <- pheno_data[female_samples, ]
 
 
-exprs_female_matrix <- exprs_female[, !(colnames(exprs_female) %in% c("probe_id", "gene_symbol"))]
+exprs_female_matrix <- exprs_female[, !(colnames(exprs_female) %in% c("probe_id", "gene_symbol"))] # isolating just numerical values, taking away probe id and gene symbol columns so you are left with just gene expression values to focus on actual numbers needed for analysis.
 
 
 
